@@ -2,6 +2,7 @@
 fastapi>=0.111
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9          # 文件上传支持
+aiofiles>=23.0
 
 # ── 数据库 ────────────────────────────────────────────────────────────────
 sqlalchemy[asyncio]>=2.0
