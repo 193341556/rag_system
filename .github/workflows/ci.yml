@@ -1,0 +1,56 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: raguser
+          POSTGRES_PASSWORD: ragpass
+          POSTGRES_DB: ragdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://raguser:ragpass@localhost:5432/ragdb
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: test-secret-key-for-ci
+          LLM_API_KEY: dummy
+          LLM_API_URL: https://dummy.api
+          ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+          EMBEDDING_MODEL: BAAI/bge-m3
+          UPLOAD_DIR: ./uploads
+          MAX_FILE_SIZE: 52428800
+        run: |
+          mkdir -p uploads data
+          pytest tests/ -v --ignore=tests/qa_eval.py
