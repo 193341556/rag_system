@@ -31,11 +31,11 @@ async def auth_token(client):
     """注册 + 登录，返回 access_token。密码用短字符串避免 bcrypt 72字节限制。"""
     await client.post(
         "/api/auth/register",
-        json={"username": "testuser", "password": "Test1234"},
+        json={"username": "testuser", "password": "pw123"},
     )
     resp = await client.post(
         "/api/auth/login",
-        json={"username": "testuser", "password": "Test1234"},
+        json={"username": "testuser", "password": "pw123"},
     )
     return resp.json()["access_token"]
 
