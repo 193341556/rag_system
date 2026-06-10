@@ -43,3 +43,11 @@ async def auth_token(client):
 @pytest.fixture(scope="session")
 def auth_headers(auth_token):
     return {"Authorization": f"Bearer {auth_token}"}
+
+@pytest.fixture(scope="session", autouse=True)
+async def flush_redis():
+    """每次测试session开始时清空Redis缓存，避免上次残留影响。"""
+    import redis
+    r = redis.Redis(host="localhost", port=6379, db=0)
+    r.flushdb()
+    yield

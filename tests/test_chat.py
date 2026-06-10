@@ -1,23 +1,20 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-
 FAKE_DOC_ID = "00000000-0000-0000-0000-000000000000"
 
 
 @pytest.mark.anyio
 class TestChat:
 
-    # ── /ask 正常流 ───────────────────────────────────────────────────────
-
     async def test_ask_invalid_doc_id_returns_error(self, client, auth_headers):
-        """doc_id 不存在时，索引加载失败，返回非 200。"""
+        """doc_id 不存在时返回 404。"""
         resp = await client.post(
             "/api/chat/ask",
             params={"doc_id": FAKE_DOC_ID, "question": "什么是RAG？"},
             headers=auth_headers,
         )
-        assert resp.status_code != 200
+        assert resp.status_code == 404
 
     async def test_ask_missing_doc_id(self, client, auth_headers):
         """缺少 doc_id 参数，返回 422。"""
@@ -37,13 +34,13 @@ class TestChat:
         )
         assert resp.status_code == 422
 
-    # ── 缓存命中 ──────────────────────────────────────────────────────────
-
     async def test_ask_cache_hit(self, client, auth_headers):
         """同一 doc_id + 同一问题，第二次请求 from_cache 为 True。"""
-        with patch("app.routers.chat.HybridRetriever") as MockRetriever, \
+        with patch("app.routers.chat.resolve_doc_id", new_callable=AsyncMock) as mock_resolve, \
+             patch("app.routers.chat.HybridRetriever") as MockRetriever, \
              patch("app.routers.chat.ask_llm", new_callable=AsyncMock) as mock_llm:
 
+            mock_resolve.return_value = "cache-hit-doc-001"
             MockRetriever.return_value.retrieve.return_value = []
             mock_llm.return_value = "这是一个测试答案"
 
@@ -68,9 +65,11 @@ class TestChat:
 
     async def test_ask_cache_answer_consistent(self, client, auth_headers):
         """缓存命中时，返回的 answer 与第一次相同。"""
-        with patch("app.routers.chat.HybridRetriever") as MockRetriever, \
+        with patch("app.routers.chat.resolve_doc_id", new_callable=AsyncMock) as mock_resolve, \
+             patch("app.routers.chat.HybridRetriever") as MockRetriever, \
              patch("app.routers.chat.ask_llm", new_callable=AsyncMock) as mock_llm:
 
+            mock_resolve.return_value = "cache-consistent-doc-002"
             MockRetriever.return_value.retrieve.return_value = []
             mock_llm.return_value = "固定答案内容xyz"
 
@@ -91,9 +90,11 @@ class TestChat:
 
     async def test_ask_different_questions_no_cache_collision(self, client, auth_headers):
         """不同问题不应命中同一缓存。"""
-        with patch("app.routers.chat.HybridRetriever") as MockRetriever, \
+        with patch("app.routers.chat.resolve_doc_id", new_callable=AsyncMock) as mock_resolve, \
+             patch("app.routers.chat.HybridRetriever") as MockRetriever, \
              patch("app.routers.chat.ask_llm", new_callable=AsyncMock) as mock_llm:
 
+            mock_resolve.return_value = "no-collision-doc-003"
             MockRetriever.return_value.retrieve.return_value = []
             mock_llm.side_effect = ["答案A", "答案B"]
 
@@ -111,8 +112,6 @@ class TestChat:
             )
             assert resp2.json()["from_cache"] is False
 
-    # ── /stream 接口 ──────────────────────────────────────────────────────
-
     async def test_stream_missing_params(self, client, auth_headers):
         """/stream 缺少必要参数，返回 422。"""
         resp = await client.get(
@@ -124,9 +123,11 @@ class TestChat:
 
     async def test_stream_returns_event_stream(self, client, auth_headers):
         """/stream 正常调用返回 text/event-stream。"""
-        with patch("app.routers.chat.HybridRetriever") as MockRetriever, \
+        with patch("app.routers.chat.resolve_doc_id", new_callable=AsyncMock) as mock_resolve, \
+             patch("app.routers.chat.HybridRetriever") as MockRetriever, \
              patch("app.routers.chat.ask_llm_stream") as mock_stream:
 
+            mock_resolve.return_value = "stream-doc-001"
             MockRetriever.return_value.retrieve.return_value = []
 
             async def fake_stream(*args, **kwargs):
@@ -145,9 +146,11 @@ class TestChat:
 
     async def test_stream_response_contains_data(self, client, auth_headers):
         """/stream 响应体包含 SSE data 格式内容。"""
-        with patch("app.routers.chat.HybridRetriever") as MockRetriever, \
+        with patch("app.routers.chat.resolve_doc_id", new_callable=AsyncMock) as mock_resolve, \
+             patch("app.routers.chat.HybridRetriever") as MockRetriever, \
              patch("app.routers.chat.ask_llm_stream") as mock_stream:
 
+            mock_resolve.return_value = "stream-doc-002"
             MockRetriever.return_value.retrieve.return_value = []
 
             async def fake_stream(*args, **kwargs):
@@ -163,20 +166,17 @@ class TestChat:
             assert resp.status_code == 200
             assert b"data:" in resp.content
 
-    # ── 限流 ─────────────────────────────────────────────────────────────
-
     async def test_rate_limit_triggers_on_11th_request(self, client, auth_headers):
-        """连续发 11 次 /ask（同一IP），第 11 次应返回 429。
-        注意：用唯一 doc_id 避免命中缓存；用新的 question 序列避免复用缓存。
-        """
-        with patch("app.routers.chat.HybridRetriever") as MockRetriever, \
+        """连续发 11 次 /ask，第 11 次应返回 429。"""
+        with patch("app.routers.chat.resolve_doc_id", new_callable=AsyncMock) as mock_resolve, \
+             patch("app.routers.chat.HybridRetriever") as MockRetriever, \
              patch("app.routers.chat.ask_llm", new_callable=AsyncMock) as mock_llm:
 
+            mock_resolve.return_value = "rate-limit-doc"
             MockRetriever.return_value.retrieve.return_value = []
             mock_llm.return_value = "答案"
 
-            # 用唯一前缀避免与其他用例的缓存冲突
-            doc_id = "ratelimit-unique-doc-999"
+            doc_id = "rate-limit-doc"
             status_codes = []
             for i in range(11):
                 resp = await client.post(
@@ -186,5 +186,4 @@ class TestChat:
                 )
                 status_codes.append(resp.status_code)
 
-            # 验证最终触发了 429（不要求精确在第11次，因为session内计数共享）
             assert 429 in status_codes

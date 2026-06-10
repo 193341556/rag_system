@@ -1,4 +1,5 @@
 import pytest
+import uuid
 
 
 @pytest.mark.anyio
@@ -8,24 +9,26 @@ class TestAuth:
 
     async def test_register_success(self, client):
         """正常注册，返回 201 和用户信息。"""
+        unique = uuid.uuid4().hex[:8]
         resp = await client.post(
             "/api/auth/register",
-            json={"username": "newuser_001", "password": "pass123"},
+            json={"username": f"newuser_{unique}", "password": "pass123"},
         )
         assert resp.status_code == 201
         data = resp.json()
         assert "id" in data
-        assert data["username"] == "newuser_001"
+        assert f"newuser_{unique}" == data["username"]
 
     async def test_login_success(self, client):
         """正常登录，返回 access_token。"""
+        unique = uuid.uuid4().hex[:8]
         await client.post(
             "/api/auth/register",
-            json={"username": "loginuser", "password": "pass123"},
+            json={"username": f"loginuser_{unique}", "password": "pass123"},
         )
         resp = await client.post(
             "/api/auth/login",
-            json={"username": "loginuser", "password": "pass123"},
+            json={"username": f"loginuser_{unique}", "password": "pass123"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -34,13 +37,14 @@ class TestAuth:
 
     async def test_token_is_string(self, client):
         """登录返回的 token 是非空字符串。"""
+        unique = uuid.uuid4().hex[:8]
         await client.post(
             "/api/auth/register",
-            json={"username": "tokenuser", "password": "pass123"},
+            json={"username": f"tokenuser_{unique}", "password": "pass123"},
         )
         resp = await client.post(
             "/api/auth/login",
-            json={"username": "tokenuser", "password": "pass123"},
+            json={"username": f"tokenuser_{unique}", "password": "pass123"},
         )
         token = resp.json()["access_token"]
         assert isinstance(token, str)
@@ -50,7 +54,8 @@ class TestAuth:
 
     async def test_register_duplicate_username(self, client):
         """重复注册同一用户名，返回 400。"""
-        payload = {"username": "dupuser", "password": "pass123"}
+        unique = uuid.uuid4().hex[:8]
+        payload = {"username": f"dupuser_{unique}", "password": "pass123"}
         await client.post("/api/auth/register", json=payload)
         resp = await client.post("/api/auth/register", json=payload)
         assert resp.status_code == 400
@@ -58,13 +63,14 @@ class TestAuth:
 
     async def test_login_wrong_password(self, client):
         """密码错误，返回 401。"""
+        unique = uuid.uuid4().hex[:8]
         await client.post(
             "/api/auth/register",
-            json={"username": "wrongpwuser", "password": "correct"},
+            json={"username": f"wrongpw_{unique}", "password": "correct"},
         )
         resp = await client.post(
             "/api/auth/login",
-            json={"username": "wrongpwuser", "password": "wrongpass"},
+            json={"username": f"wrongpw_{unique}", "password": "wrongpass"},
         )
         assert resp.status_code == 401
 
@@ -72,7 +78,7 @@ class TestAuth:
         """不存在的用户名登录，返回 401。"""
         resp = await client.post(
             "/api/auth/login",
-            json={"username": "ghost_user_xyz", "password": "any"},
+            json={"username": "ghost_user_xyz_never_exists", "password": "any"},
         )
         assert resp.status_code == 401
 
