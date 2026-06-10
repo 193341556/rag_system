@@ -11,7 +11,7 @@ def anyio_backend():
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_db():
-    """CI环境里手动建表，本地如果表已存在也不会重复创建。"""
+    """CI环境里手动建表。"""
     await init_db()
     yield
     await close_db()
@@ -28,14 +28,14 @@ async def client():
 
 @pytest.fixture(scope="session")
 async def auth_token(client):
-    """注册 + 登录，返回 access_token，整个 session 只执行一次。"""
+    """注册 + 登录，返回 access_token。密码用短字符串避免 bcrypt 72字节限制。"""
     await client.post(
         "/api/auth/register",
-        json={"username": "testuser", "password": "testpass123"},
+        json={"username": "testuser", "password": "Test1234"},
     )
     resp = await client.post(
         "/api/auth/login",
-        json={"username": "testuser", "password": "testpass123"},
+        json={"username": "testuser", "password": "Test1234"},
     )
     return resp.json()["access_token"]
 
